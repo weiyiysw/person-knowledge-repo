@@ -9,7 +9,7 @@ export default defineUserConfig({
 
   title: '我的知识库',
   description: '温故而知新，可以为师矣',
-  base: '/person-knowledge-repo/'
+  base: '/person-knowledge-repo/',
 
   theme: hopeTheme({
     // logo: 'https://vuejs.press/images/hero.png',
