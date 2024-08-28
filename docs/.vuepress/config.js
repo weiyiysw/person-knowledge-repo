@@ -29,7 +29,8 @@ export default defineUserConfig({
         text: '数据库',
         link: '/database/',
         children: [
-          { text: 'Mybatis', link: '/database/orm/mybatis/' }
+          { text: 'Mybatis', link: '/database/orm/mybatis/' },
+          { text: 'SQL', link: '/database/mysql/sql' }
         ]
       },
       {
