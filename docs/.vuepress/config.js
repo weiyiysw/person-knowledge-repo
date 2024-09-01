@@ -65,6 +65,13 @@ export default defineUserConfig({
           { text: 'jq', link: '/other/jq' },
           { text: 'cpdf', link: '/other/cpdf' },
         ]
+      },
+      {
+        text: '软考', 
+        link: '/software-exam/',
+        children: [
+          { text: '系统架构师', link: '/software-exam/system-architecture' },
+        ]
       }
     ],
 
