@@ -18,11 +18,12 @@ export default defineUserConfig({
     // 顶部导航
     navbar: [
       {
-        text: '编程语言',
-        link: '/program-language/',
+        text: '编程随笔',
+        link: '/program/',
         children: [
-          { text: 'Java', link: '/program-language/java', icon: 'creative' },
-          { text: 'Golang', link: '/program-language/golang', icon: 'config' }
+          { text: 'Java', link: '/program/java', icon: 'creative' },
+          { text: 'Spring', link: '/program/spring', icon: 'config' },
+          { text: 'Golang', link: '/program/golang', icon: 'config' }
         ]
       },
       {
