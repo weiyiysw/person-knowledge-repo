@@ -322,12 +322,27 @@ public void create2(DemoReq req) {
 
 所以，我们在理解传播行为的小结上，其结论需要再次加上限制条件。
 
-|事务组合|说明|不捕获第二个事务方法异常|捕获第二个事务方法异常|
-|---|---|---|---|
-|REQUIRED + REQUIRED|一个事务执行|一起回滚|一起回滚|
-|REQUIRED + REQUIRES_NEW|第二个新事务|都回滚了|第二个回滚，第一个不回滚|
-|REQUIRES + NESTED|第二个为嵌套事务|都回滚了|第二个回滚，第一个不回滚|
+|事务组合|说明|不捕获第二个事务方法异常|捕获第二个事务方法异常|事务一抛异常|
+|---|---|---|---|---|
+|REQUIRED + REQUIRED|一个事务执行|一起回滚|一起回滚|一起回滚|
+|REQUIRED + REQUIRES_NEW|第二个新事务|都回滚了|第二个回滚，第一个不回滚|事务一回滚，事务二正常提交|
+|REQUIRES + NESTED|第二个为嵌套事务|都回滚了|第二个回滚，第一个不回滚|一起回滚|
 
 这里说明下，为什么REQUIRED + REQUIRED并且捕获第二个的情况下仍会回滚。因为整体是一个事务，在第二个的事务方法里抛出了异常，Spring将这个事务标记为`rollback`，因此最终都会一起回滚。
+
+### 使用AopContext.currentProxy()报错
+
+报错信息：
+
+~~~
+java.lang.IllegalStateException: Cannot find current proxy: Set 'exposeProxy' property on Advised to 'true' to make it available, and ensure that AopContext.currentProxy() is invoked in the same thread as the AOP invocation context.
+~~~
+
+问题原因：这是因为没有自动加载AOP配置`AopAutoConfiguration`。
+
+解决方法：
+
+1. 增加注解`@EnableAspectJAutoProxy(exposeProxy = true)`
+2. 增加配置spring.aop.auto=true
 
 [代理模式]: ../gof/structure/proxy.md
