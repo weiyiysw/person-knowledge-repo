@@ -58,7 +58,7 @@ public class DemoServiceImpl implements IDemoService {
 }
 ~~~
 
-### 声明式事务失效场景2：异步调用失效
+### 声明式事务失效的场景2：异步调用失效
 
 前面提到在同一个类中调用事物方法时可以使用`AopProxy.currentProxy()`获取到代理对象，然后再调用事务方法，即可使声明式事务生效。但是这个也并不适用于所有场景。见以下代码示例，异步的场景下就会失效。
 
@@ -210,8 +210,124 @@ public class SpringContextUtil implements ApplicationContextAware {
 }
 ~~~
 
-### 事务的传播机制
+### Spring管理下事务的传播行为
 
-敬请期待~~
+提到事务，首先想到的都是其ACID四大特性。
+
+* A：原子性
+* C：一致性
+* I：隔离性
+* D：持久性
+
+> 不熟悉的同学，请自行查找资料学习。
+
+在Spring管理下，事务的传播行为有七种，分别是
+
+|事务的传播行为|说明|EJB|
+|---|---|---|
+|REQUIRED|使用当前事务，如果当前没有事务，则创建一个事物执行|✅|
+|SUPPORTS|使用当前事务，如果当前没有事务，则无事务方式执行。|✅|
+|MANDATORY|使用当前事务，如果当前没有事务，则抛异常。|✅|
+|REQUIRES_NEW|创建一个新事物，如果当前存在事务则挂起当前事务。|✅|
+|NOT_SUPPORTED|无事务方式执行，如果存在事务则会挂起当前事务。|✅|
+|NEVER|无事务方式执行，如果存在事务则会抛错。|✅|
+|NESTED|如果当前存在事务，则在嵌套事务中执行。如果当前没有事务，则与REQUIRED类似。|❌|
+
+> 在EJB中，只有前6种行为，最后一个NESTED是没有的。具体可见：javax.transaction.Transactional的TxType属性
+> 使用JPA + Hibernate的情况下，NESTED是不生效的。因为Hibernate JPA不支持嵌套事务。
+> 抛错NestedTransactionNotSupportedException: JpaDialect does not support savepoints - check your JPA provider's capabilities
+> 
+> 默认的传播行为是REQUIRED
+
+#### 理解传播行为
+
+根据上面的说明，单个事务的情况下，我们都很容易理解。重点是存在多个事务的情况下，理解其传播行为。我们以两个事务为例：
+
+由于任取两种行为，则会有49种。这里不会列举这么多，我们仅分析场景的几种情况：
+
+|事务组合|说明|回滚|
+|---|---|---|
+|REQUIRED + REQUIRED|一个事务执行|一起回滚|
+|REQUIRED + REQUIRES_NEW|第二个新事务|事务独立，互不影响。|
+|REQUIRES + NESTED|第二个为嵌套事务|外部事务异常，回滚全部。内部嵌套事务异常，回滚内部。|
+
+#### 实验REQUIRED + REQUIRES_NEW
+
+请看如下代码：
+
+~~~java
+@Override
+@Transactional(rollbackFor = Exception.class)
+public Integer create(DemoReq req) {
+  //
+  DemoEntity entity = cvt2Entity(req);
+  demoRepository.save(entity);
+
+  // 通过获取代理调用，使得create2支持事务
+  DemoImpl svc = (DemoImpl) AopContext.currentProxy();
+  svc.create2(req);
+  return 1;
+}
+
+@Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
+public void create2(DemoReq req) {
+  DemoEntity entity = cvt2Entity(req);
+  // todo测试时，可以修改某个属性使保存的不一样
+  demoRepository.save(entity);
+  // 构造异常
+  return 1 / 0;
+}
+~~~
+
+上述例子中，`create`和`create2`**都会回滚**。`create2`回滚，很容易理解。那为什么`create`也回滚呢？`REQUIRES_NEW`不是新事务吗？
+
+认真思考一下，就能明白。`create2`抛出异常，异常抛给了调用方`create`。`create`里有异常，自然也就回滚了。
+
+想要`create2`抛异常，不影响`create`。只需要在`create`中调用`create2`的地方加上`try-catch`，在`catch`中把异常吃掉即可。
+
+如果反过来，`create`里抛出异常，会怎么样呢？
+
+~~~java
+@Override
+@Transactional(rollbackFor = Exception.class)
+public Integer create(DemoReq req) {
+  ...
+
+  // 其他全部，同上；仅在return前构造异常
+  int i = 1 / 0;
+  return 1;
+}
+
+@Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
+public void create2(DemoReq req) {
+  DemoEntity entity = cvt2Entity(req);
+  // todo测试时，可以修改某个属性使保存的不一样
+  demoRepository.save(entity);
+  return 1;
+}
+~~~
+
+先说结论，这里`create`回滚，`create2`正常提交。因为这是两个独立的事务，并且其调用关系是`create`调用`create2`。`create2`无异常，正常提交。`create`有异常，则回滚但不会回滚内部新事务执行的create2。
+
+
+#### 实验REQUIRES + NESTED
+
+仅需将前面的`create2`的传播行为修改为`Propagation.NESTED`即可。
+
+结论：
+
+1. `create2`抛出异常且`create`未捕获情况下，都回滚了
+2. `create2`抛出异常且`create`捕获情况下，回滚`create2`
+3. `create`抛出异常且`create2`正常执行的情况下，都回滚了
+
+所以，我们在理解传播行为的小结上，其结论需要再次加上限制条件。
+
+|事务组合|说明|不捕获第二个事务方法异常|捕获第二个事务方法异常|
+|---|---|---|---|
+|REQUIRED + REQUIRED|一个事务执行|一起回滚|一起回滚|
+|REQUIRED + REQUIRES_NEW|第二个新事务|都回滚了|第二个回滚，第一个不回滚|
+|REQUIRES + NESTED|第二个为嵌套事务|都回滚了|第二个回滚，第一个不回滚|
+
+这里说明下，为什么REQUIRED + REQUIRED并且捕获第二个的情况下仍会回滚。因为整体是一个事务，在第二个的事务方法里抛出了异常，Spring将这个事务标记为`rollback`，因此最终都会一起回滚。
 
 [代理模式]: ../gof/structure/proxy.md
