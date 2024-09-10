@@ -330,6 +330,67 @@ public void create2(DemoReq req) {
 
 这里说明下，为什么REQUIRED + REQUIRED并且捕获第二个的情况下仍会回滚。因为整体是一个事务，在第二个的事务方法里抛出了异常，Spring将这个事务标记为`rollback`，因此最终都会一起回滚。
 
+### 事务同步管理器
+
+`TransactionSynchronizationManager`事务同步管理器是一个很强大的工具，利用好它对于我们在事务处理的流程上有很大的帮助。
+
+~~~java
+/**
+ * 在当前线程上注册一个新的事务同步器。
+ * synchronizations可以实现一个org.springframework.core.Ordered的接口，使注册的同步器按顺序执行。
+ */
+public static void registerSynchronization(TransactionSynchronization synchronization)
+			throws IllegalStateException {
+
+		Assert.notNull(synchronization, "TransactionSynchronization must not be null");
+		Set<TransactionSynchronization> synchs = synchronizations.get();
+		if (synchs == null) {
+			throw new IllegalStateException("Transaction synchronization is not active");
+		}
+		synchs.add(synchronization);
+}
+
+/** 
+ * TransactionSynchronization摘录了其中部分常用接口
+ */
+public interface TransactionSynchronization extends Flushable {
+
+  default void beforeCommit(boolean readOnly) {
+	}
+
+	default void beforeCompletion() {
+	}
+
+	default void afterCommit() {
+	}
+
+	default void afterCompletion(int status) {
+	}
+}
+
+/**
+ * 真正调用的地方
+ */
+public abstract class AbstractPlatformTransactionManager {
+
+  private void processCommit(DefaultTransactionStatus status) throws TransactionException {
+    ...
+    prepareForCommit(status);
+		triggerBeforeCommit(status);
+		triggerBeforeCompletion(status);
+    ...
+    try {
+			triggerAfterCommit(status);
+		}
+		finally {
+			triggerAfterCompletion(status, TransactionSynchronization.STATUS_COMMITTED);
+		}
+  }
+}
+~~~
+
+我们可以使用`TransactionSynchronizationManager.registerSynchronization`注册一个同步器，在同步器里实现`beforeCommit`或`afterCommit`方法。通常业务需求上实现`afterCommit`居多。比如：某个异步调用，必须在事务执行完成之后调用。
+
 ### 使用AopContext.currentProxy()报错
 
 报错信息：
